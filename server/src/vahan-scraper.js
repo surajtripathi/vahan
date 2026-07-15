@@ -35,12 +35,16 @@ function loadHistoricalCache() {
     for (const file of files) {
       try {
         const stored = JSON.parse(readFileSync(join(CACHE_DIR, file), 'utf-8'));
+        const now = Date.now();
         for (const entry of (stored.data || [])) {
-          dataCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent: true });
+          const permanent = entry.permanent !== false;
+          if (!permanent && now - entry.timestamp > CURRENT_TTL_MS) continue;
+          dataCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent });
           dataCount++;
         }
         for (const entry of (stored.rto || [])) {
-          rtoCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent: true });
+          const permanent = entry.permanent !== false;
+          rtoCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent });
           rtoCount++;
         }
       } catch (e) {
@@ -56,8 +60,8 @@ function loadHistoricalCache() {
 function saveYearFile(yearKey) {
   const data = [];
   for (const [key, entry] of dataCache) {
-    if (entry.permanent && yearKeyFromCacheKey(key) === yearKey) {
-      data.push({ key, data: entry.data, timestamp: entry.timestamp });
+    if (yearKeyFromCacheKey(key) === yearKey) {
+      data.push({ key, data: entry.data, timestamp: entry.timestamp, permanent: entry.permanent });
     }
   }
   try {
@@ -71,7 +75,7 @@ function saveYearFile(yearKey) {
 function saveRtoFile() {
   const rto = [];
   for (const [key, entry] of rtoCache) {
-    if (entry.permanent) rto.push({ key, data: entry.data, timestamp: entry.timestamp });
+    rto.push({ key, data: entry.data, timestamp: entry.timestamp, permanent: entry.permanent });
   }
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
@@ -145,10 +149,8 @@ function getCached(cache, key) {
 
 function setCache(cache, key, data, permanent = false) {
   cache.set(key, { data, timestamp: Date.now(), permanent });
-  if (permanent) {
-    if (cache === dataCache) saveYearFile(yearKeyFromCacheKey(key));
-    else saveRtoFile();
-  }
+  if (cache === dataCache) saveYearFile(yearKeyFromCacheKey(key));
+  else saveRtoFile();
 }
 
 const AJAX_HEADERS = {

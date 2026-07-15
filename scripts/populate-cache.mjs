@@ -22,9 +22,10 @@ const rtoOnly  = args.includes('--rto-only');
 const now = new Date();
 const currentYear = now.getFullYear();
 
+// Include current year — data changes monthly but Railway can't scrape live
 const historicalYears = onlyYear
   ? [onlyYear]
-  : Array.from({ length: currentYear - 2018 }, (_, i) => String(2018 + i));
+  : Array.from({ length: currentYear - 2018 + 1 }, (_, i) => String(2018 + i));
 
 const Y_AXIS = ['Vehicle Category', 'Maker', 'Fuel Type'];
 
