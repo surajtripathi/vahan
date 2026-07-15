@@ -23,9 +23,10 @@ const now = new Date();
 const currentYear = now.getFullYear();
 
 // Include current year — data changes monthly but Railway can't scrape live
+const START_YEAR = 2003;
 const historicalYears = onlyYear
   ? [onlyYear]
-  : Array.from({ length: currentYear - 2018 + 1 }, (_, i) => String(2018 + i));
+  : Array.from({ length: currentYear - START_YEAR + 1 }, (_, i) => String(START_YEAR + i));
 
 const Y_AXIS = ['Vehicle Category', 'Maker', 'Fuel Type'];
 
