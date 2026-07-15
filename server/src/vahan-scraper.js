@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { wrapper } from 'axios-cookiejar-support';
+import { HttpsCookieAgent } from 'http-cookie-agent/http';
 import { CookieJar } from 'tough-cookie';
 import * as cheerio from 'cheerio';
 import * as XLSX from 'xlsx';
@@ -135,7 +135,7 @@ const AJAX_HEADERS = {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function withRetry(fn, retries = 3, delayMs = 2000) {
+async function withRetry(fn, retries = 5, delayMs = 2000) {
   let lastErr;
   for (let i = 0; i < retries; i++) {
     try {
@@ -155,9 +155,8 @@ async function withRetry(fn, retries = 3, delayMs = 2000) {
 
 function createClient() {
   const jar = new CookieJar();
-  const client = wrapper(axios.create({
-    jar,
-    withCredentials: true,
+  const client = axios.create({
+    httpsAgent: new HttpsCookieAgent({ cookies: { jar }, keepAlive: false }),
     headers: {
       'User-Agent': USER_AGENT,
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -167,7 +166,7 @@ function createClient() {
     },
     maxRedirects: 5,
     timeout: 45000,
-  }));
+  });
   return { client, jar };
 }
 
