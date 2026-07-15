@@ -14,7 +14,6 @@ const BASE_URL = 'https://vahan.parivahan.gov.in/vahan4dashboard/vahan/view/repo
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
-const CURRENT_TTL_MS = 24 * 60 * 60 * 1000;
 const dataCache = new Map();
 const rtoCache = new Map();
 
@@ -35,16 +34,12 @@ function loadHistoricalCache() {
     for (const file of files) {
       try {
         const stored = JSON.parse(readFileSync(join(CACHE_DIR, file), 'utf-8'));
-        const now = Date.now();
         for (const entry of (stored.data || [])) {
-          const permanent = entry.permanent !== false;
-          if (!permanent && now - entry.timestamp > CURRENT_TTL_MS) continue;
-          dataCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent });
+          dataCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp });
           dataCount++;
         }
         for (const entry of (stored.rto || [])) {
-          const permanent = entry.permanent !== false;
-          rtoCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent });
+          rtoCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp });
           rtoCount++;
         }
       } catch (e) {
@@ -61,7 +56,7 @@ function saveYearFile(yearKey) {
   const data = [];
   for (const [key, entry] of dataCache) {
     if (yearKeyFromCacheKey(key) === yearKey) {
-      data.push({ key, data: entry.data, timestamp: entry.timestamp, permanent: entry.permanent });
+      data.push({ key, data: entry.data, timestamp: entry.timestamp });
     }
   }
   try {
@@ -75,7 +70,7 @@ function saveYearFile(yearKey) {
 function saveRtoFile() {
   const rto = [];
   for (const [key, entry] of rtoCache) {
-    rto.push({ key, data: entry.data, timestamp: entry.timestamp, permanent: entry.permanent });
+    rto.push({ key, data: entry.data, timestamp: entry.timestamp });
   }
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
@@ -87,39 +82,6 @@ function saveRtoFile() {
 
 loadHistoricalCache();
 
-function isHistoricalQuery(filters) {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-indexed
-
-  if (filters.xAxis === 'Month Wise') {
-    const year = parseInt(filters.year);
-    if (isNaN(year) || filters.year === 'A') return false;
-
-    if (filters.yearType === 'F') {
-      // FY "2025" = Apr 2025 - Mar 2026. Complete once we're past Mar of year+1.
-      const fyEndYear = year + 1;
-      return currentYear > fyEndYear || (currentYear === fyEndYear && currentMonth > 2);
-    }
-    return year < currentYear;
-  }
-
-  if (filters.xAxis === 'Calendar Year') {
-    const years = filters.years || [];
-    return years.length > 0 && years.every(y => parseInt(y) < currentYear);
-  }
-
-  if (filters.xAxis === 'Financial Year') {
-    const years = filters.years || [];
-    return years.length > 0 && years.every(y => {
-      const startYear = parseInt(y.split('-')[0]);
-      const fyEndYear = startYear + 1;
-      return currentYear > fyEndYear || (currentYear === fyEndYear && currentMonth > 2);
-    });
-  }
-
-  return false;
-}
 
 function buildCacheKey(filters) {
   const keyParts = {
@@ -139,16 +101,11 @@ function buildCacheKey(filters) {
 
 function getCached(cache, key) {
   const entry = cache.get(key);
-  if (!entry) return null;
-  if (!entry.permanent && Date.now() - entry.timestamp > CURRENT_TTL_MS) {
-    cache.delete(key);
-    return null;
-  }
-  return entry.data;
+  return entry ? entry.data : null;
 }
 
-function setCache(cache, key, data, permanent = false) {
-  cache.set(key, { data, timestamp: Date.now(), permanent });
+function setCache(cache, key, data) {
+  cache.set(key, { data, timestamp: Date.now() });
   if (cache === dataCache) saveYearFile(yearKeyFromCacheKey(key));
   else saveRtoFile();
 }
@@ -621,26 +578,23 @@ export async function fetchRtoList(stateCode, forceRefresh = false) {
     const params = buildStateChangeParams(viewState, ids, stateCode);
     const response = await client.post(BASE_URL, params.toString(), { headers: AJAX_HEADERS });
     const rtoList = parseRtoOptions(response.data);
-    setCache(rtoCache, stateCode, rtoList, true);
+    setCache(rtoCache, stateCode, rtoList);
     return rtoList;
   });
 }
 
 export async function fetchData(filters, forceRefresh = false) {
   const cacheKey = buildCacheKey(filters);
-  const historical = isHistoricalQuery(filters);
 
   if (!forceRefresh) {
     const cached = getCached(dataCache, cacheKey);
     if (cached) {
-      const entry = dataCache.get(cacheKey);
-      const cacheType = entry.permanent ? 'permanent' : '24h';
-      console.log(`[vahan] Cache hit (${cacheType}) for key=${cacheKey.slice(0, 80)}...`);
-      return { ...cached, cached: true, cacheType };
+      console.log(`[vahan] Cache hit for key=${cacheKey.slice(0, 80)}...`);
+      return { ...cached, cached: true };
     }
   }
 
-  console.log(`[vahan] Fetching fresh data (historical=${historical})...`);
+  console.log(`[vahan] Fetching fresh data...`);
 
   return withRetry(async () => {
     const { client } = createClient();
@@ -677,7 +631,7 @@ export async function fetchData(filters, forceRefresh = false) {
         const currentVS = extractViewState(response.data) || viewState;
         const excelData = await fetchExcelData(client, currentVS, ids, filters);
         if (excelData.rows.length > 0) {
-          setCache(dataCache, cacheKey, excelData, historical);
+          setCache(dataCache, cacheKey, excelData);
           return { ...excelData, cached: false };
         }
       } catch (e) {
@@ -686,7 +640,7 @@ export async function fetchData(filters, forceRefresh = false) {
     }
 
     const result = { headers: finalHeaders, rows: finalRows };
-    setCache(dataCache, cacheKey, result, historical);
+    setCache(dataCache, cacheKey, result);
     return { ...result, cached: false };
   });
 }
@@ -695,35 +649,18 @@ export function getCacheStats() {
   const now = Date.now();
   const dataEntries = [];
   for (const [key, entry] of dataCache) {
-    const ageMs = now - entry.timestamp;
-    if (entry.permanent) {
-      dataEntries.push({
-        key: JSON.parse(key),
-        rows: entry.data.rows.length,
-        type: 'permanent',
-        ageMinutes: Math.round(ageMs / 60000),
-      });
-    } else {
-      const remainingMs = CURRENT_TTL_MS - ageMs;
-      if (remainingMs > 0) {
-        dataEntries.push({
-          key: JSON.parse(key),
-          rows: entry.data.rows.length,
-          type: '24h',
-          ageMinutes: Math.round(ageMs / 60000),
-          expiresInMinutes: Math.round(remainingMs / 60000),
-        });
-      }
-    }
+    dataEntries.push({
+      key: JSON.parse(key),
+      rows: entry.data.rows.length,
+      ageMinutes: Math.round((now - entry.timestamp) / 60000),
+    });
   }
   const rtoEntries = [];
   for (const [key, entry] of rtoCache) {
-    const ageMs = now - entry.timestamp;
     rtoEntries.push({
       stateCode: key,
       rtoCount: entry.data.length,
-      type: 'permanent',
-      ageMinutes: Math.round(ageMs / 60000),
+      ageMinutes: Math.round((now - entry.timestamp) / 60000),
     });
   }
   return { data: dataEntries, rto: rtoEntries };
