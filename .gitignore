@@ -1,0 +1,79 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build output
+dist/
+dist-ssr/
+build/
+out/
+client/dist/
+server/dist/
+
+# Vite
+*.local
+.vite/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Caches
+.cache/
+server/.cache/
+.eslintcache
+.stylelintcache
+.npm
+*.tsbuildinfo
+
+# Testing / coverage
+coverage/
+.nyc_output/
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# IDE / editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*.sublime-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temp
+tmp/
+temp/
+*.tmp
+*.pid
+*.seed
+*.pid.lock
