@@ -40,7 +40,6 @@ lerna-debug.log*
 
 # Caches
 .cache/
-server/.cache/
 .eslintcache
 .stylelintcache
 .npm
