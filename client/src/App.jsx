@@ -3,7 +3,8 @@ import MultiSelect from './components/MultiSelect.jsx';
 import DataChart from './components/DataChart.jsx';
 import DataTable from './components/DataTable.jsx';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const _apiUrl = import.meta.env.VITE_API_URL || '';
+const API_BASE = _apiUrl && !_apiUrl.startsWith('http') ? `https://${_apiUrl}` : _apiUrl;
 
 const CHART_COLORS = [
   '#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea',
