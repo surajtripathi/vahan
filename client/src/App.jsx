@@ -3,6 +3,8 @@ import MultiSelect from './components/MultiSelect.jsx';
 import DataChart from './components/DataChart.jsx';
 import DataTable from './components/DataTable.jsx';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 const CHART_COLORS = [
   '#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea',
   '#0891b2', '#e11d48', '#65a30d', '#7c3aed', '#0d9488',
@@ -30,7 +32,7 @@ export default function App() {
   const [cacheInfo, setCacheInfo] = useState(null);
 
   useEffect(() => {
-    fetch('/api/filters')
+    fetch(`${API_BASE}/api/filters`)
       .then(r => r.json())
       .then(setFilters)
       .catch(e => setError(e.message));
@@ -38,7 +40,7 @@ export default function App() {
 
   useEffect(() => {
     if (state !== '-1') {
-      fetch('/api/rto-list', {
+      fetch(`${API_BASE}/api/rto-list`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stateCode: state }),
@@ -67,7 +69,7 @@ export default function App() {
           vehicleCategories, fuelTypes,
           companies,
         };
-        const resp = await fetch('/api/fetch-data', {
+        const resp = await fetch(`${API_BASE}/api/fetch-data`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filters: params, forceRefresh }),
@@ -100,7 +102,7 @@ export default function App() {
           state, rto, yAxis, xAxis, yearType, year, years,
           vehicleCategories, fuelTypes,
         };
-        const resp = await fetch('/api/fetch-data', {
+        const resp = await fetch(`${API_BASE}/api/fetch-data`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filters: params, forceRefresh }),

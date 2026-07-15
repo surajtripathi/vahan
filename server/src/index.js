@@ -4,7 +4,7 @@ import { createVahanSession, fetchData, fetchRtoList, getCacheStats, clearCache 
 import { STATES, VEHICLE_CATEGORIES, Y_AXIS_OPTIONS, X_AXIS_OPTIONS, FUEL_TYPES, NORMS, MAKERS } from './constants.js';
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -51,11 +51,8 @@ app.delete('/api/cache', (_req, res) => {
   res.json({ cleared: true });
 });
 
-// Local dev only — on Vercel the app is imported as a serverless function
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
-    console.log(`Vahan Dashboard API running on http://localhost:${PORT}`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`Vahan Dashboard API running on port ${PORT}`);
+});
 
 export default app;
