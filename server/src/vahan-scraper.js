@@ -3,13 +3,12 @@ import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
 import * as cheerio from 'cheerio';
 import * as XLSX from 'xlsx';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = process.env.CACHE_DIR || join(__dirname, '..', '.cache');
-const CACHE_FILE = join(CACHE_DIR, 'historical.json');
 
 const BASE_URL = 'https://vahan.parivahan.gov.in/vahan4dashboard/vahan/view/reportview.xhtml';
 
@@ -19,44 +18,65 @@ const CURRENT_TTL_MS = 24 * 60 * 60 * 1000;
 const dataCache = new Map();
 const rtoCache = new Map();
 
-function loadHistoricalCache() {
+function yearKeyFromCacheKey(cacheKey) {
   try {
-    const raw = readFileSync(CACHE_FILE, 'utf-8');
-    const stored = JSON.parse(raw);
-    let dataCount = 0;
-    let rtoCount = 0;
-    for (const entry of (stored.data || [])) {
-      dataCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent: true });
-      dataCount++;
-    }
-    for (const entry of (stored.rto || [])) {
-      rtoCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent: true });
-      rtoCount++;
-    }
-    console.log(`[vahan] Loaded historical cache: ${dataCount} data entries, ${rtoCount} RTO entries`);
-  } catch {
-    console.log('[vahan] No historical cache file found, starting fresh');
-  }
+    const k = JSON.parse(cacheKey);
+    if (k.xAxis === 'Month Wise') return k.year === 'A' ? 'current' : (k.year || 'unknown');
+    if (k.years && k.years.length > 0) return k.years.sort().join('-');
+    return 'unknown';
+  } catch { return 'unknown'; }
 }
 
-function saveHistoricalCache() {
+function loadHistoricalCache() {
+  let dataCount = 0, rtoCount = 0;
+  try {
+    const files = readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
+    for (const file of files) {
+      try {
+        const stored = JSON.parse(readFileSync(join(CACHE_DIR, file), 'utf-8'));
+        for (const entry of (stored.data || [])) {
+          dataCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent: true });
+          dataCount++;
+        }
+        for (const entry of (stored.rto || [])) {
+          rtoCache.set(entry.key, { data: entry.data, timestamp: entry.timestamp, permanent: true });
+          rtoCount++;
+        }
+      } catch (e) {
+        console.error(`[vahan] Failed to read cache file ${file}:`, e.message);
+      }
+    }
+  } catch {
+    // cache dir doesn't exist yet
+  }
+  console.log(`[vahan] Loaded cache: ${dataCount} data entries, ${rtoCount} RTO entries`);
+}
+
+function saveYearFile(yearKey) {
   const data = [];
   for (const [key, entry] of dataCache) {
-    if (entry.permanent) {
+    if (entry.permanent && yearKeyFromCacheKey(key) === yearKey) {
       data.push({ key, data: entry.data, timestamp: entry.timestamp });
-    }
-  }
-  const rto = [];
-  for (const [key, entry] of rtoCache) {
-    if (entry.permanent) {
-      rto.push({ key, data: entry.data, timestamp: entry.timestamp });
     }
   }
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
-    writeFileSync(CACHE_FILE, JSON.stringify({ data, rto }));
+    writeFileSync(join(CACHE_DIR, `${yearKey}.json`), JSON.stringify({ data }));
   } catch (e) {
-    console.error('[vahan] Failed to write historical cache:', e.message);
+    console.error(`[vahan] Failed to write cache ${yearKey}.json:`, e.message);
+  }
+}
+
+function saveRtoFile() {
+  const rto = [];
+  for (const [key, entry] of rtoCache) {
+    if (entry.permanent) rto.push({ key, data: entry.data, timestamp: entry.timestamp });
+  }
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(join(CACHE_DIR, 'rto.json'), JSON.stringify({ rto }));
+  } catch (e) {
+    console.error('[vahan] Failed to write cache rto.json:', e.message);
   }
 }
 
@@ -124,7 +144,10 @@ function getCached(cache, key) {
 
 function setCache(cache, key, data, permanent = false) {
   cache.set(key, { data, timestamp: Date.now(), permanent });
-  if (permanent) saveHistoricalCache();
+  if (permanent) {
+    if (cache === dataCache) saveYearFile(yearKeyFromCacheKey(key));
+    else saveRtoFile();
+  }
 }
 
 const AJAX_HEADERS = {
@@ -706,5 +729,8 @@ export function getCacheStats() {
 export function clearCache() {
   dataCache.clear();
   rtoCache.clear();
-  try { writeFileSync(CACHE_FILE, JSON.stringify({ data: [], rto: [] })); } catch {}
+  try {
+    const files = readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
+    for (const file of files) writeFileSync(join(CACHE_DIR, file), JSON.stringify({ data: [], rto: [] }));
+  } catch {}
 }
