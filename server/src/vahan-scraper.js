@@ -52,7 +52,7 @@ function loadHistoricalCache() {
   console.log(`[vahan] Loaded cache: ${dataCount} data entries, ${rtoCount} RTO entries`);
 }
 
-function saveYearFile(yearKey) {
+export function saveYearFile(yearKey) {
   const data = [];
   for (const [key, entry] of dataCache) {
     if (yearKeyFromCacheKey(key) === yearKey) {
@@ -67,7 +67,7 @@ function saveYearFile(yearKey) {
   }
 }
 
-function saveRtoFile() {
+export function saveRtoFile() {
   const rto = [];
   for (const [key, entry] of rtoCache) {
     rto.push({ key, data: entry.data, timestamp: entry.timestamp });
@@ -106,8 +106,6 @@ function getCached(cache, key) {
 
 function setCache(cache, key, data) {
   cache.set(key, { data, timestamp: Date.now() });
-  if (cache === dataCache) saveYearFile(yearKeyFromCacheKey(key));
-  else saveRtoFile();
 }
 
 const AJAX_HEADERS = {
@@ -669,8 +667,4 @@ export function getCacheStats() {
 export function clearCache() {
   dataCache.clear();
   rtoCache.clear();
-  try {
-    const files = readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
-    for (const file of files) writeFileSync(join(CACHE_DIR, file), JSON.stringify({ data: [], rto: [] }));
-  } catch {}
 }

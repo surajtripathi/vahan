@@ -11,7 +11,7 @@
  *   node scripts/populate-cache.mjs --dry         # print queries, no network
  */
 
-import { fetchData, fetchRtoList } from '../server/src/vahan-scraper.js';
+import { fetchData, fetchRtoList, saveYearFile, saveRtoFile } from '../server/src/vahan-scraper.js';
 import { STATES } from '../server/src/constants.js';
 
 const args = process.argv.slice(2);
@@ -63,6 +63,8 @@ for (const [i, filters] of dataQueries.entries()) {
   try {
     process.stdout.write(`${label} ... `);
     const result = await fetchData(filters);
+    const yearLabel2 = filters.year ?? filters.years?.join(',');
+    if (!result.cached) saveYearFile(yearLabel2);
     console.log(`${result.rows?.length ?? 0} rows${result.cached ? ' (cached)' : ''}`);
     ok++;
   } catch (e) {
@@ -79,6 +81,7 @@ for (const [i, code] of rtoStateCodes.entries()) {
   try {
     process.stdout.write(`${label} ... `);
     const list = await fetchRtoList(code);
+    saveRtoFile();
     console.log(`${list.length} RTOs`);
     ok++;
   } catch (e) {
