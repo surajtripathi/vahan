@@ -51,6 +51,11 @@ app.delete('/api/cache', (_req, res) => {
   res.json({ cleared: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`Vahan Dashboard API running on http://localhost:${PORT}`);
-});
+// Local dev only — on Vercel the app is imported as a serverless function
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Vahan Dashboard API running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
