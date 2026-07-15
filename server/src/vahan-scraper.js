@@ -84,14 +84,16 @@ loadHistoricalCache();
 
 
 function buildCacheKey(filters) {
+  const xAxis = filters.xAxis || 'Month Wise';
+  const isMonthWise = xAxis === 'Month Wise';
   const keyParts = {
     state: filters.state || '-1',
     rto: filters.rto || '-1',
     yAxis: filters.yAxis || 'Vehicle Category',
-    xAxis: filters.xAxis || 'Month Wise',
-    yearType: filters.yearType || 'C',
-    year: filters.year || '2026',
-    years: (filters.years || []).sort().join(','),
+    xAxis,
+    yearType: isMonthWise ? (filters.yearType || 'C') : '',
+    year: isMonthWise ? (filters.year || '2026') : '',
+    years: isMonthWise ? '' : (filters.years || []).sort().join(','),
     vehicleCategories: (filters.vehicleCategories || []).sort().join(','),
     fuelTypes: (filters.fuelTypes || []).sort().join(','),
     norms: (filters.norms || []).sort().join(','),
