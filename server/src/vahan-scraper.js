@@ -22,7 +22,8 @@ function yearKeyFromCacheKey(cacheKey) {
   try {
     const k = JSON.parse(cacheKey);
     if (k.xAxis === 'Month Wise') return k.year === 'A' ? 'current' : (k.year || 'unknown');
-    if (k.years && k.years.length > 0) return k.years.sort().join('-');
+    // k.years is stored as a comma-joined string e.g. "2024" or "2024,2025"
+    if (k.years && k.years.length > 0) return k.years.split(',').filter(Boolean).sort().join('-');
     return 'unknown';
   } catch { return 'unknown'; }
 }
