@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import https from 'node:https';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = process.env.CACHE_DIR || join(__dirname, '..', '.cache');
@@ -133,19 +134,43 @@ const AJAX_HEADERS = {
   'X-Requested-With': 'XMLHttpRequest',
 };
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function withRetry(fn, retries = 3, delayMs = 2000) {
+  let lastErr;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isRetryable = err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED'
+        || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND'
+        || (err.response && err.response.status >= 500);
+      if (!isRetryable || i === retries - 1) throw err;
+      console.log(`[vahan] Retry ${i + 1}/${retries - 1} after ${err.code}...`);
+      await sleep(delayMs * (i + 1));
+    }
+  }
+  throw lastErr;
+}
+
 function createClient() {
   const jar = new CookieJar();
+  const httpsAgent = new https.Agent({ keepAlive: false });
   const client = wrapper(axios.create({
     jar,
     withCredentials: true,
+    httpsAgent,
     headers: {
       'User-Agent': USER_AGENT,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'close',
       'Referer': BASE_URL,
     },
     maxRedirects: 5,
-    timeout: 30000,
+    timeout: 45000,
   }));
   return { client, jar };
 }
@@ -567,15 +592,16 @@ export async function fetchRtoList(stateCode, forceRefresh = false) {
     }
   }
 
-  const { client } = createClient();
-  const { viewState, ids } = await initSession(client);
-
-  const params = buildStateChangeParams(viewState, ids, stateCode);
-  const response = await client.post(BASE_URL, params.toString(), { headers: AJAX_HEADERS });
-
-  const rtoList = parseRtoOptions(response.data);
-  setCache(rtoCache, stateCode, rtoList, true);
-  return rtoList;
+  return withRetry(async () => {
+    const { client } = createClient();
+    const { viewState, ids } = await initSession(client);
+    await sleep(600);
+    const params = buildStateChangeParams(viewState, ids, stateCode);
+    const response = await client.post(BASE_URL, params.toString(), { headers: AJAX_HEADERS });
+    const rtoList = parseRtoOptions(response.data);
+    setCache(rtoCache, stateCode, rtoList, true);
+    return rtoList;
+  });
 }
 
 export async function fetchData(filters, forceRefresh = false) {
@@ -593,47 +619,54 @@ export async function fetchData(filters, forceRefresh = false) {
   }
 
   console.log(`[vahan] Fetching fresh data (historical=${historical})...`);
-  const { client } = createClient();
-  let { viewState, ids } = await initSession(client);
 
-  if (filters.state && filters.state !== '-1') {
-    const stateParams = buildStateChangeParams(viewState, ids, filters.state);
-    const stateResp = await client.post(BASE_URL, stateParams.toString(), { headers: AJAX_HEADERS });
-    const newVS = extractViewState(stateResp.data);
-    if (newVS) viewState = newVS;
-  }
+  return withRetry(async () => {
+    const { client } = createClient();
+    let { viewState, ids } = await initSession(client);
 
-  if (filters.xAxis === 'Calendar Year' || filters.xAxis === 'Financial Year') {
-    const xParams = buildXAxisChangeParams(viewState, filters.xAxis);
-    const xResp = await client.post(BASE_URL, xParams.toString(), { headers: AJAX_HEADERS });
-    const newVS = extractViewState(xResp.data);
-    if (newVS) viewState = newVS;
-  }
-
-  const refreshParams = buildRefreshParams(viewState, ids, filters);
-  const response = await client.post(BASE_URL, refreshParams.toString(), { headers: AJAX_HEADERS });
-
-  const { headers, rows } = parseTableData(response.data);
-  const groupingData = parseGroupingTable(response.data);
-  const finalHeaders = groupingData.headers.length > 0 ? groupingData.headers : headers;
-  const finalRows = groupingData.rows.length > 0 ? groupingData.rows : rows;
-
-  if (filters.yAxis === 'Maker' && filters.companies && filters.companies.length > 0) {
-    try {
-      const currentVS = extractViewState(response.data) || viewState;
-      const excelData = await fetchExcelData(client, currentVS, ids, filters);
-      if (excelData.rows.length > 0) {
-        setCache(dataCache, cacheKey, excelData, historical);
-        return { ...excelData, cached: false };
-      }
-    } catch (e) {
-      console.error('Excel download failed, using table data:', e.message);
+    if (filters.state && filters.state !== '-1') {
+      await sleep(600);
+      const stateParams = buildStateChangeParams(viewState, ids, filters.state);
+      const stateResp = await client.post(BASE_URL, stateParams.toString(), { headers: AJAX_HEADERS });
+      const newVS = extractViewState(stateResp.data);
+      if (newVS) viewState = newVS;
     }
-  }
 
-  const result = { headers: finalHeaders, rows: finalRows };
-  setCache(dataCache, cacheKey, result, historical);
-  return { ...result, cached: false };
+    if (filters.xAxis === 'Calendar Year' || filters.xAxis === 'Financial Year') {
+      await sleep(600);
+      const xParams = buildXAxisChangeParams(viewState, filters.xAxis);
+      const xResp = await client.post(BASE_URL, xParams.toString(), { headers: AJAX_HEADERS });
+      const newVS = extractViewState(xResp.data);
+      if (newVS) viewState = newVS;
+    }
+
+    await sleep(800);
+    const refreshParams = buildRefreshParams(viewState, ids, filters);
+    const response = await client.post(BASE_URL, refreshParams.toString(), { headers: AJAX_HEADERS });
+
+    const { headers, rows } = parseTableData(response.data);
+    const groupingData = parseGroupingTable(response.data);
+    const finalHeaders = groupingData.headers.length > 0 ? groupingData.headers : headers;
+    const finalRows = groupingData.rows.length > 0 ? groupingData.rows : rows;
+
+    if (filters.yAxis === 'Maker' && filters.companies && filters.companies.length > 0) {
+      try {
+        await sleep(600);
+        const currentVS = extractViewState(response.data) || viewState;
+        const excelData = await fetchExcelData(client, currentVS, ids, filters);
+        if (excelData.rows.length > 0) {
+          setCache(dataCache, cacheKey, excelData, historical);
+          return { ...excelData, cached: false };
+        }
+      } catch (e) {
+        console.error('Excel download failed, using table data:', e.message);
+      }
+    }
+
+    const result = { headers: finalHeaders, rows: finalRows };
+    setCache(dataCache, cacheKey, result, historical);
+    return { ...result, cached: false };
+  });
 }
 
 export function getCacheStats() {
