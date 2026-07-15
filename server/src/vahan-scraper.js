@@ -6,7 +6,6 @@ import * as XLSX from 'xlsx';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import https from 'node:https';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = process.env.CACHE_DIR || join(__dirname, '..', '.cache');
@@ -156,17 +155,14 @@ async function withRetry(fn, retries = 3, delayMs = 2000) {
 
 function createClient() {
   const jar = new CookieJar();
-  const httpsAgent = new https.Agent({ keepAlive: false });
   const client = wrapper(axios.create({
     jar,
     withCredentials: true,
-    httpsAgent,
     headers: {
       'User-Agent': USER_AGENT,
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
-      'Connection': 'close',
       'Referer': BASE_URL,
     },
     maxRedirects: 5,
