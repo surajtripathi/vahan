@@ -124,7 +124,7 @@ for (const [i, filters] of dataQueries.entries()) {
   const label = `[data ${String(i + 1).padStart(3)}/${dataQueries.length}] ${yearLabel} | ${filters.yAxis} | ${filters.xAxis}`;
   try {
     process.stdout.write(`${label} ... `);
-    const result = await fetchData(filters);
+    const result = await fetchData(filters, true);
     saveYearFile(filters.year ?? filters.years?.[0]);
     console.log(`${result.rows?.length ?? 0} rows${result.cached ? ' (cached)' : ''}`);
     ok++;

@@ -625,7 +625,7 @@ export async function fetchData(filters, forceRefresh = false) {
     const finalHeaders = groupingData.headers.length > 0 ? groupingData.headers : headers;
     const finalRows = groupingData.rows.length > 0 ? groupingData.rows : rows;
 
-    if (filters.yAxis === 'Maker' && filters.companies && filters.companies.length > 0) {
+    if (filters.yAxis === 'Maker') {
       try {
         await sleep(600);
         const currentVS = extractViewState(response.data) || viewState;
