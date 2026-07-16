@@ -1,78 +1,131 @@
 #!/usr/bin/env node
-/**
- * Run locally to pre-populate server/.cache/ with historical data and
- * RTO lists. Commit the cache files to GitHub so Railway serves them
- * on boot without live scraping.
- *
- * Usage:
- *   node scripts/populate-cache.mjs               # all historical years + all RTOs
- *   node scripts/populate-cache.mjs --year 2024   # single year only (skips RTOs)
- *   node scripts/populate-cache.mjs --rto-only    # only fetch RTO lists
- *   node scripts/populate-cache.mjs --dry         # print queries, no network
- */
-
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createInterface } from 'readline/promises';
 
-// Must be set before vahan-scraper.js loads (CACHE_DIR is read at module init time)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env.CACHE_DIR = join(__dirname, '..', 'client', 'public', 'cache');
 
 const { fetchData, fetchRtoList, saveYearFile, saveRtoFile } = await import('../server/src/vahan-scraper.js');
-import { STATES } from '../server/src/constants.js';
+const { STATES } = await import('../server/src/constants.js');
 
-const args = process.argv.slice(2);
-const DRY      = args.includes('--dry');
-const onlyYear = args.includes('--year')     ? args[args.indexOf('--year') + 1] : null;
-const rtoOnly  = args.includes('--rto-only');
-
-const now = new Date();
-const currentYear = now.getFullYear();
-
-// Include current year — data changes monthly but Railway can't scrape live
+const DRY = process.argv.includes('--dry');
 const START_YEAR = 2003;
-const historicalYears = onlyYear
-  ? [onlyYear]
-  : Array.from({ length: currentYear - START_YEAR + 1 }, (_, i) => String(START_YEAR + i));
-
+const currentYear = new Date().getFullYear();
 const Y_AXIS = ['Vehicle Category', 'Maker', 'Fuel Type'];
 
-// --- Data queries ---
-const dataQueries = [];
-if (!rtoOnly) {
-  for (const year of historicalYears) {
-    for (const yAxis of Y_AXIS) {
-      dataQueries.push({ state: '-1', rto: '-1', yAxis, xAxis: 'Month Wise', yearType: 'C', year, vehicleCategories: [], fuelTypes: [] });
-      dataQueries.push({ state: '-1', rto: '-1', yAxis, xAxis: 'Calendar Year', years: [year], vehicleCategories: [], fuelTypes: [] });
-    }
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const rl = createInterface({ input: process.stdin, output: process.stdout });
+const ask = (q) => rl.question(q);
+
+function validateYear(input) {
+  const y = parseInt(input.trim(), 10);
+  if (isNaN(y) || y < START_YEAR || y > currentYear) return null;
+  return y;
+}
+
+async function askYear(label) {
+  while (true) {
+    const input = await ask(`  ${label} (${START_YEAR}–${currentYear}): `);
+    const y = validateYear(input);
+    if (y !== null) return y;
+    console.log(`  ✗ Enter a year between ${START_YEAR} and ${currentYear}`);
   }
 }
 
-// --- RTO queries (all states except All India) ---
-const rtoStateCodes = onlyYear ? [] : STATES.filter(s => s.code !== '-1').map(s => s.code);
+async function askChoice(prompt, options) {
+  const lines = options.map((o, i) => `  ${i + 1}) ${o}`).join('\n');
+  while (true) {
+    const input = await ask(`${prompt}\n${lines}\n> `);
+    const n = parseInt(input.trim(), 10);
+    if (n >= 1 && n <= options.length) return n - 1;
+    console.log(`  ✗ Enter a number between 1 and ${options.length}`);
+  }
+}
 
-console.log(`\nPopulating cache (dry=${DRY})`);
-if (!rtoOnly) console.log(`  ${dataQueries.length} data queries across ${historicalYears.length} year(s)`);
-if (rtoStateCodes.length) console.log(`  ${rtoStateCodes.length} RTO queries (one per state)`);
-console.log();
+// ── interactive prompts ───────────────────────────────────────────────────────
+
+console.log('\n── Vahan Cache Populator ─────────────────────────────────────\n');
+
+const whatIdx = await askChoice('What do you want to refresh?', [
+  'Sales data',
+  'RTO data',
+  'Both',
+]);
+const doData = whatIdx !== 1;
+const doRto  = whatIdx !== 0;
+
+let years = [];
+if (doData) {
+  console.log();
+  const yearMode = await askChoice('Year selection?', [
+    'Single year',
+    'Year range',
+    `All years (${START_YEAR}–${currentYear})`,
+  ]);
+
+  if (yearMode === 0) {
+    console.log();
+    const y = await askYear('Year');
+    years = [String(y)];
+  } else if (yearMode === 1) {
+    console.log();
+    let start, end;
+    start = await askYear('Start year');
+    do {
+      end = await askYear('End year');
+      if (end < start) console.log(`  ✗ End year must be ≥ start year (${start})`);
+    } while (end < start);
+    years = Array.from({ length: end - start + 1 }, (_, i) => String(start + i));
+  } else {
+    years = Array.from({ length: currentYear - START_YEAR + 1 }, (_, i) => String(START_YEAR + i));
+  }
+}
+
+// ── build query list ──────────────────────────────────────────────────────────
+
+const dataQueries = [];
+for (const year of years) {
+  for (const yAxis of Y_AXIS) {
+    dataQueries.push({ state: '-1', rto: '-1', yAxis, xAxis: 'Month Wise', yearType: 'C', year, vehicleCategories: [], fuelTypes: [] });
+    dataQueries.push({ state: '-1', rto: '-1', yAxis, xAxis: 'Calendar Year', years: [year], vehicleCategories: [], fuelTypes: [] });
+  }
+}
+const rtoStateCodes = doRto ? STATES.filter(s => s.code !== '-1').map(s => s.code) : [];
+
+// ── summary + confirm ─────────────────────────────────────────────────────────
+
+console.log('\n──────────────────────────────────────────────────────────────');
+if (doData) console.log(`  Sales data: ${years.join(', ')}  (${dataQueries.length} queries)`);
+if (doRto)  console.log(`  RTO data:   ${rtoStateCodes.length} states`);
+console.log('──────────────────────────────────────────────────────────────');
 
 if (DRY) {
-  for (const q of dataQueries) console.log('DATA', JSON.stringify(q));
-  for (const code of rtoStateCodes) console.log('RTO ', code);
+  console.log('\n[dry run] would fetch the above — exiting\n');
+  rl.close();
   process.exit(0);
 }
 
+const confirm = await ask('\nProceed? (y/n): ');
+rl.close();
+if (confirm.trim().toLowerCase() !== 'y') {
+  console.log('Cancelled.');
+  process.exit(0);
+}
+
+// ── fetch ─────────────────────────────────────────────────────────────────────
+
+console.log();
 let ok = 0, fail = 0;
 
-// Fetch data
 for (const [i, filters] of dataQueries.entries()) {
   const yearLabel = filters.year ?? filters.years?.join(',');
-  const label = `[data ${i + 1}/${dataQueries.length}] ${yearLabel} | ${filters.yAxis} | ${filters.xAxis}`;
+  const label = `[data ${String(i + 1).padStart(3)}/${dataQueries.length}] ${yearLabel} | ${filters.yAxis} | ${filters.xAxis}`;
   try {
     process.stdout.write(`${label} ... `);
     const result = await fetchData(filters);
-    const yearLabel2 = filters.year ?? filters.years?.join(',');
-    if (!result.cached) saveYearFile(yearLabel2);
+    saveYearFile(filters.year ?? filters.years?.[0]);
     console.log(`${result.rows?.length ?? 0} rows${result.cached ? ' (cached)' : ''}`);
     ok++;
   } catch (e) {
@@ -82,10 +135,9 @@ for (const [i, filters] of dataQueries.entries()) {
   await new Promise(r => setTimeout(r, 1500));
 }
 
-// Fetch RTOs
 for (const [i, code] of rtoStateCodes.entries()) {
   const state = STATES.find(s => s.code === code);
-  const label = `[rto  ${i + 1}/${rtoStateCodes.length}] ${code} (${state?.name})`;
+  const label = `[rto  ${String(i + 1).padStart(3)}/${rtoStateCodes.length}] ${code} (${state?.name})`;
   try {
     process.stdout.write(`${label} ... `);
     const list = await fetchRtoList(code);
@@ -101,6 +153,6 @@ for (const [i, code] of rtoStateCodes.entries()) {
 
 console.log(`\nDone: ${ok} ok, ${fail} failed`);
 console.log(`\nCommit the cache:`);
-console.log(`  git add server/.cache/`);
-console.log(`  git commit -m "chore: update historical cache"`);
+console.log(`  git add client/public/cache/`);
+console.log(`  git commit -m "chore: update cache"`);
 console.log(`  git push`);
