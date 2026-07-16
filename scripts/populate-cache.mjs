@@ -11,7 +11,14 @@
  *   node scripts/populate-cache.mjs --dry         # print queries, no network
  */
 
-import { fetchData, fetchRtoList, saveYearFile, saveRtoFile } from '../server/src/vahan-scraper.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Must be set before vahan-scraper.js loads (CACHE_DIR is read at module init time)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+process.env.CACHE_DIR = join(__dirname, '..', 'client', 'public', 'cache');
+
+const { fetchData, fetchRtoList, saveYearFile, saveRtoFile } = await import('../server/src/vahan-scraper.js');
 import { STATES } from '../server/src/constants.js';
 
 const args = process.argv.slice(2);
